@@ -1,0 +1,8 @@
+{
+  "name": "Mila LeadSniper",
+  "description": "Tactical B2B sales lead scanner, decision-maker tracker, and market intelligence interface with AI-powered context analysis and LinkedIn scraper simulation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
