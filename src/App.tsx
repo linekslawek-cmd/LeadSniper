@@ -113,6 +113,32 @@ export default function App() {
   ]);
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
 
+  // Poll leads directly from SQLite database to keep UI 100% updated in real-time
+  const fetchLeadsFromDb = () => {
+    fetch("/api/leads")
+      .then(res => {
+        if (!res.ok) throw new Error("Failed to load leads from database");
+        return res.json();
+      })
+      .then((data: Lead[]) => {
+        setLeads(data);
+        // Sync system health stats
+        setHealth(h => ({
+          ...h,
+          activeModel: process.env.LLM_PROVIDER === "ollama" ? "Ollama (Gemma 2 9B)" : "Gemini 3.5 Core Core",
+        }));
+      })
+      .catch(err => {
+        console.error("Error synchronizing leads from SQLite:", err);
+      });
+  };
+
+  useEffect(() => {
+    fetchLeadsFromDb();
+    const interval = setInterval(fetchLeadsFromDb, 4000); // poll every 4 seconds
+    return () => clearInterval(interval);
+  }, []);
+
   // Increment funnel numbers when new DMUs are extracted
   const handleIncrementDMsIdentified = (count: number) => {
     if (count > 0) {
@@ -123,19 +149,31 @@ export default function App() {
     }
   };
 
-  // Add custom found lead 
+  // Add custom found lead to SQLite database
   const handleAddNewLead = (newLead: Lead) => {
-    setLeads(prev => [newLead, ...prev]);
-    setFunnel(p => ({
-      ...p,
-      foundLeadsCount: p.foundLeadsCount + 1
-    }));
-    
-    // Animate system log
-    setHealth(prev => ({
-      ...prev,
-      currentLog: `Zarejestrowano nową kartę sprawozdawczą podmiotu: ${newLead.companyName}`
-    }));
+    fetch("/api/leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newLead)
+    })
+    .then(res => {
+      if (!res.ok) throw new Error("Failed to insert lead");
+      return res.json();
+    })
+    .then(() => {
+      fetchLeadsFromDb();
+      setFunnel(p => ({
+        ...p,
+        foundLeadsCount: p.foundLeadsCount + 1
+      }));
+      setHealth(prev => ({
+        ...prev,
+        currentLog: `Zarejestrowano nową kartę sprawozdawczą podmiotu w SQLite: ${newLead.companyName}`
+      }));
+    })
+    .catch(err => {
+      console.error("Error creating new lead in persistence layer:", err);
+    });
   };
 
   // Trigger cross-linking click to load certain lead directly in the Recon AI screen
@@ -144,14 +182,23 @@ export default function App() {
     setActiveTab("recon");
   };
 
-  // Toggle/Update lead BDO status
+  // Update lead status in SQLite database
   const handleUpdateBdoStatus = (leadId: string, status: 'Aktywny' | 'Weryfikacja' | 'Wygasły') => {
-    setLeads(prev => prev.map(lead => {
-      if (lead.id === leadId) {
-        return { ...lead, bdoStatus: status };
-      }
-      return lead;
-    }));
+    fetch(`/api/leads/${leadId}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bdoStatus: status })
+    })
+    .then(res => {
+      if (!res.ok) throw new Error("Failed to update status");
+      return res.json();
+    })
+    .then(() => {
+      fetchLeadsFromDb();
+    })
+    .catch(err => {
+      console.error("Error updating status in SQLite:", err);
+    });
   };
 
   // Trigger whole-database scan simulation
